@@ -112,3 +112,6 @@ screenshots/*.webm
 replays/
 results/agent_code/*/training_scores.json
 my-saved-model.pt
+agent_code/*/death_log.json
+agent_code/*/event_tally.json
+training_progress.png

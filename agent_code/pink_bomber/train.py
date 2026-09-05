@@ -70,6 +70,14 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     last_key = features_to_key(state_to_features(last_game_state))
     q_update(self, last_key, last_action, reward, None, done=True)
 
+    # DIAGNOSTIC: per-round self-kill trend over training
+    if not hasattr(self, 'death_log'):
+        self.death_log = []
+    self.death_log.append(1 if 'KILLED_SELF' in events else 0)
+    death_log_path = os.path.join(os.path.dirname(__file__), 'death_log.json')
+    with open(death_log_path, 'w') as f:
+        json.dump(self.death_log, f)
+
     # Log score for this round (for plotting training progress later)
     score = last_game_state['self'][1]
     if not hasattr(self, 'score_log'):

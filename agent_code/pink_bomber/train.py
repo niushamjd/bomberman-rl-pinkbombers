@@ -1,11 +1,13 @@
-from collections import namedtuple, deque
 import os
 import json
 import pickle
 from typing import List
 
+import numpy as np
+
 import events as e
-from .features import state_to_features
+from .features import state_to_features, ACTIONS
+from .callbacks import features_to_key, get_q
 
 REWARDS = {
     e.COIN_COLLECTED: 10,
@@ -19,22 +21,31 @@ REWARDS = {
     e.SURVIVED_ROUND: 5,
 }
 
+ALPHA = 0.1   # learning rate
+GAMMA = 0.9   # discount factor
+
 
 def reward_from_events(events_list: List[str]) -> float:
     return sum(REWARDS.get(ev, 0) for ev in events_list)
 
 
-Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
-
-TRANSITION_HISTORY_SIZE = 3
-RECORD_ENEMY_TRANSITIONS = 1.0
+def q_update(self, old_key, action, reward, new_key, done):
+    if old_key is None or action is None:
+        return
+    action_idx = ACTIONS.index(action)
+    old_q = get_q(self.q_table, old_key)
+    if done or new_key is None:
+        future = 0.0
+    else:
+        future = np.max(get_q(self.q_table, new_key))
+    old_q[action_idx] += ALPHA * (reward + GAMMA * future - old_q[action_idx])
 
 
 def setup_training(self):
     """
     Initialise self for training purpose. Called once, after setup() in callbacks.py.
     """
-    self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
+    pass  # self.q_table already initialized in setup()
 
 
 def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_state: dict, events: List[str]):
@@ -44,13 +55,9 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
 
     reward = reward_from_events(events)
-    self.transitions.append(Transition(
-        state_to_features(old_game_state),
-        self_action,
-        state_to_features(new_game_state),
-        reward,
-    ))
-    # TODO: use self.transitions to update your model (Q-table update / NN training step)
+    old_key = features_to_key(state_to_features(old_game_state))
+    new_key = features_to_key(state_to_features(new_game_state))
+    q_update(self, old_key, self_action, reward, new_key, done=False)
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -60,12 +67,8 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
 
     reward = reward_from_events(events)
-    self.transitions.append(Transition(
-        state_to_features(last_game_state),
-        last_action,
-        None,
-        reward,
-    ))
+    last_key = features_to_key(state_to_features(last_game_state))
+    q_update(self, last_key, last_action, reward, None, done=True)
 
     # Log score for this round (for plotting training progress later)
     score = last_game_state['self'][1]
@@ -77,6 +80,6 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     with open(log_path, 'w') as f:
         json.dump(self.score_log, f)
 
-    # Store the model
+    # Store the Q-table
     with open("my-saved-model.pt", "wb") as file:
-        pickle.dump(self.model, file)
+        pickle.dump(self.q_table, file)

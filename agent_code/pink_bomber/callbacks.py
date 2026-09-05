@@ -1,33 +1,50 @@
 import os
 import pickle
-import random
 
 import numpy as np
 
 from .features import state_to_features, ACTIONS
 
 
+def features_to_key(features):
+    """Convert a feature vector into a hashable dict key."""
+    if features is None:
+        return None
+    return tuple(int(f) for f in features)
+
+
+def get_q(q_table, state_key):
+    """Get Q-values for a state, initializing to zeros if unseen."""
+    if state_key not in q_table:
+        q_table[state_key] = np.zeros(len(ACTIONS))
+    return q_table[state_key]
+
+
 def setup(self):
     """
-    Setup your code. This is called once when loading each agent.
+    Setup your code. Called once when loading each agent.
     """
-    if self.train or not os.path.isfile("my-saved-model.pt"):
-        self.logger.info("Setting up model from scratch.")
-        weights = np.random.rand(len(ACTIONS))
-        self.model = weights / weights.sum()
-    else:
-        self.logger.info("Loading model from saved state.")
+    self.epsilon = 0.2  # exploration rate during training
+
+    if os.path.isfile("my-saved-model.pt"):
+        self.logger.info("Loading existing Q-table.")
         with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
+            self.q_table = pickle.load(file)
+    else:
+        self.logger.info("Setting up Q-table from scratch.")
+        self.q_table = {}
 
 
 def act(self, game_state: dict) -> str:
     features = state_to_features(game_state)
+    state_key = features_to_key(features)
 
-    random_prob = .1
-    if self.train and random.random() < random_prob:
-        self.logger.debug("Choosing action purely at random.")
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
+    if self.train and np.random.random() < self.epsilon:
+        self.logger.debug("Choosing action purely at random (exploration).")
+        return np.random.choice(ACTIONS)
 
-    self.logger.debug("Querying model for action.")
-    return np.random.choice(ACTIONS, p=self.model)
+    q_values = get_q(self.q_table, state_key)
+    max_q = np.max(q_values)
+    best_actions = [a for a, q in zip(ACTIONS, q_values) if q == max_q]
+    self.logger.debug(f"Q-values: {dict(zip(ACTIONS, q_values))}")
+    return np.random.choice(best_actions)
